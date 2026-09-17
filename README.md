@@ -52,7 +52,7 @@ npm install
 npm run dev
 ```
 
-Open `[Live Lead Tracker Workspace](https://lead-tracker-assignment.vercel.app/)`. The root route redirects to `/leads`.
+Open the [Live Lead Tracker Workspace](https://lead-tracker-assignment.vercel.app/). The root route redirects to `/leads`.
 
 ### Quality gates
 
