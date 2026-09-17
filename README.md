@@ -88,6 +88,24 @@ entry, PostCSS configuration, package metadata, and ignore rules remain because
 they each have a concrete build responsibility. The result is a lean project,
 not an artificially incomplete one.
 
+### Operator Review Discipline
+
+I treated emotional neutrality as part of the engineering workflow. When an AI
+response became verbose, repetitive, or personally framed, I did not spend
+time arguing with the model or reacting to its tone. I extracted any useful
+technical signal, ignored the surrounding blabber, and issued the next precise
+command. This was a deliberate psychological discipline: it protected the
+deadline, reduced conversational noise, and kept decisions anchored to the
+specification rather than to the temperament of a generated response.
+
+I also used trigger-based adaptation. Once I observed a recurring failure
+signal—such as invented scope, a version-inaccurate API, or movement toward a
+default scaffold—I did not repeat the same prompt conditions and expect a
+different result. I identified the trigger, changed the structure of my next
+instruction, and added an explicit boundary that prevented recurrence. In
+practice, each AI mistake became a durable improvement to my prompting method,
+not an invitation to retry the same approach.
+
 ## App Structure & System Mapping
 
 ```text
@@ -331,19 +349,43 @@ accuracy.
 
 ### Generated output I deleted or rewrote
 
-- I removed the initial custom base layer from `app/globals.css`. Tailwind's
-  three directives remain, while visual defaults live visibly on the layout
-  markup instead of forming a second styling architecture.
-- I rewrote date cloning from direct `Date`-object construction to explicit
-  `.getTime()` cloning. This is clearer under strict TypeScript and prevents
-  returned records from exposing stored date references.
-- I moved stale-date selection out of the client modal into the shared
-  `findStaleLeads` business function. The server page and test suite now execute
-  the same rule instead of maintaining two formulas that could drift.
-- I replaced requested React 19-only `useOptimistic` and `useActionState`
-  assumptions with React 18-compatible typed reducer/form-state mechanisms.
-  The behavior remains equivalent without pretending the pinned runtime has
-  APIs it does not expose.
+I did not preserve generated output merely because it compiled. I reviewed each
+piece against the locked runtime, data invariants, and ownership boundaries,
+then made the following corrections:
+
+1. **I deleted a redundant styling layer.** The initial output placed custom
+   base rules in `app/globals.css`, creating a second source of visual behavior
+   beside Tailwind. I reduced that file to Tailwind's three directives and
+   moved visible defaults into `app/layout.tsx`. This made styling ownership
+   explicit and removed hidden CSS drift.
+2. **I rewrote version-inaccurate React state logic.** Early instructions
+   assumed React 19-only `useOptimistic` and `useActionState` APIs despite the
+   project being pinned to React 18. I recognized the mismatch before treating
+   the generated pattern as valid and replaced it with typed `useReducer`,
+   `useTransition`, and controlled form state. The user experience remained
+   optimistic while the implementation became truthful to the installed
+   runtime.
+3. **I rewrote duplicated stale-account logic.** The first modal design
+   calculated stale leads inside the client component. I moved that formula
+   into the shared `findStaleLeads` business function and made the server page
+   pass the exact result into the modal. The interface and test suite now use
+   one rule instead of two formulas that could silently diverge.
+4. **I rewrote date cloning at the data boundary.** I replaced direct
+   `Date`-object reuse with explicit `.getTime()` reconstruction. This prevents
+   returned records from leaking mutable references back into the in-process
+   store and makes the defensive copy unambiguous under strict TypeScript.
+5. **I deleted deployment output that concealed the real application.** During
+   release verification, a catch-all `vercel.json` rewrite produced a
+   superficially “Ready” deployment with no usable Next.js routes. I inspected
+   the deployment evidence, removed that rewrite, restored the missing package
+   manifest, selected the Next.js framework preset, and cleared the incorrect
+   `public` output directory. I then rebuilt, tested, and redeployed instead of
+   describing the 404 as an unexplained hosting problem.
+
+This review trail shows the sequence I followed: observe the concrete failure,
+locate the violated system boundary, delete or rewrite the responsible output,
+and verify the correction through compilation, tests, or the production
+deployment itself.
 
 ## Trade-offs and cut corners
 
