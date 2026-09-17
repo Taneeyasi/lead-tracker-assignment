@@ -13,6 +13,11 @@ assignment: 25 realistic leads are distributed evenly across New, Contacted,
 Qualified, Won, and Lost, with deterministic date states, visible artificial
 latency, and deliberately unreliable writes.
 
+## Project links
+
+- **GitHub repository:** [Taneeyasi/lead-tracker-assignment](https://github.com/Taneeyasi/lead-tracker-assignment)
+- **Live application:** [Lead Tracker on Vercel](https://lead-tracker-assignment.vercel.app/)
+
 ## System intent
 
 I optimized the architecture around three invariants:
