@@ -340,17 +340,23 @@ That process uncovered details easy to miss in a working demo:
 
 ### Concrete AI correction
 
-The early generated design retained “move to the next stage” as a locked
-sequential transition. Once I reconciled that interpretation with the detailed
-R3 control requirement, I directed the AI to replace it with an unlocked
-five-stage dropdown. I retained the correction in the decision history rather
-than silently presenting the final interpretation as inevitable.
+The generated implementation treated add, edit, and mark-stale as ornamental
+against a frozen seed. It assumed an in-process mock could not retain writes
+because the assignment forbids a real database, then offered a vague hosting
+story: Vercel starts a new server on each mutation, so the list silently
+returns to the original 25 leads. I paused, re-read the spec, and compared
+that explanation with a working product. `createLead`, `updateLead`, and the
+stale batch exist so the mock module can change. A live model that cannot add
+a lead, update a stage, or tag stale accounts is unfinished, not “in-process
+by design.”
 
-I also rejected version-inaccurate guidance that described `searchParams` as an
-asynchronous prop under Next.js 14. The page itself is asynchronous because it
-awaits data; its Next.js 14 `searchParams` prop is synchronous. Separating those
-facts prevented a fashionable newer-version pattern from weakening type
-accuracy.
+I therefore directed the save path back into `lib/data.ts`: successful add,
+update, and stale operations must persist in the same JavaScript array the
+page reads. Stage updates still fail about one call in ten; on that failure
+the row must snap back to the last saved stage in the mock store and show a
+clear `× Update failed` message under that dropdown. Add and mark-stale follow
+the same store, without turning Stale into deletion or a sixth pipeline
+column.
 
 ### Generated output I deleted or rewrote
 
