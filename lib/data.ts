@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 export type Stage = "New" | "Contacted" | "Qualified" | "Won" | "Lost";
 
@@ -274,10 +276,203 @@ const seededLeads: SeedLead[] = [
   },
 ];
 
-const mockLeads: Lead[] = seededLeads.map((lead) => ({
-  ...lead,
-  isStale: false,
-}));
+type LeadChangeAction = "create" | "update" | "mark-stale";
+
+interface LeadChangeLogEntry {
+  readonly at: string;
+  readonly action: LeadChangeAction;
+  readonly ids: readonly string[];
+}
+
+interface SerializedLead {
+  readonly id: string;
+  readonly name: string;
+  readonly company: string;
+  readonly email: string;
+  readonly stage: Stage;
+  readonly isStale: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+interface LeadStore {
+  leads: Lead[];
+  changeLog: LeadChangeLogEntry[];
+}
+
+interface GlobalLeadTrackerState {
+  __leadTrackerStore?: LeadStore;
+}
+
+const globalLeadState = globalThis as typeof globalThis &
+  GlobalLeadTrackerState;
+
+function createSeededLeads(): Lead[] {
+  return seededLeads.map((lead) => ({
+    ...lead,
+    createdAt: new Date(lead.createdAt.getTime()),
+    updatedAt: new Date(lead.updatedAt.getTime()),
+    isStale: false,
+  }));
+}
+
+function isTestRuntime(): boolean {
+  return process.env.VITEST === "true" || process.env.NODE_ENV === "test";
+}
+
+function getPersistFilePath(): string | null {
+  if (isTestRuntime() || process.env.VERCEL === "1") {
+    return null;
+  }
+
+  return join(process.cwd(), ".data", "leads-store.json");
+}
+
+function parseStoredStage(value: unknown): Stage | null {
+  switch (value) {
+    case "New":
+    case "Contacted":
+    case "Qualified":
+    case "Won":
+    case "Lost":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function reviveStoredLead(value: SerializedLead): Lead | null {
+  const stage = parseStoredStage(value.stage);
+  const createdAt = new Date(value.createdAt);
+  const updatedAt = new Date(value.updatedAt);
+
+  if (
+    stage === null ||
+    typeof value.id !== "string" ||
+    value.id.length === 0 ||
+    typeof value.name !== "string" ||
+    typeof value.company !== "string" ||
+    typeof value.email !== "string" ||
+    typeof value.isStale !== "boolean" ||
+    Number.isNaN(createdAt.getTime()) ||
+    Number.isNaN(updatedAt.getTime()) ||
+    updatedAt.getTime() < createdAt.getTime()
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    name: value.name,
+    company: value.company,
+    email: value.email,
+    stage,
+    isStale: value.isStale,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function readPersistedLeads(): Lead[] | null {
+  const persistPath = getPersistFilePath();
+
+  if (persistPath === null || !existsSync(persistPath)) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(persistPath, "utf8"));
+
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+
+    const revivedLeads: Lead[] = [];
+
+    for (const entry of parsed) {
+      const lead = reviveStoredLead(entry as SerializedLead);
+
+      if (lead === null) {
+        return null;
+      }
+
+      revivedLeads.push(lead);
+    }
+
+    return revivedLeads.length > 0 ? revivedLeads : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistLeads(leads: readonly Lead[]): void {
+  const persistPath = getPersistFilePath();
+
+  if (persistPath === null) {
+    return;
+  }
+
+  try {
+    mkdirSync(dirname(persistPath), { recursive: true });
+    writeFileSync(
+      persistPath,
+      JSON.stringify(
+        leads.map(
+          (lead): SerializedLead => ({
+            id: lead.id,
+            name: lead.name,
+            company: lead.company,
+            email: lead.email,
+            stage: lead.stage,
+            isStale: lead.isStale,
+            createdAt: lead.createdAt.toISOString(),
+            updatedAt: lead.updatedAt.toISOString(),
+          }),
+        ),
+      ),
+      "utf8",
+    );
+  } catch {
+    // Local persistence is best-effort. A failed disk write must not
+    // undo an in-memory save the UI already accepted.
+  }
+}
+
+function getLeadStore(): LeadStore {
+  const existingStore = globalLeadState.__leadTrackerStore;
+
+  if (existingStore !== undefined) {
+    return existingStore;
+  }
+
+  const store: LeadStore = {
+    leads: readPersistedLeads() ?? createSeededLeads(),
+    changeLog: [],
+  };
+
+  globalLeadState.__leadTrackerStore = store;
+
+  return store;
+}
+
+function getMutableLeads(): Lead[] {
+  return getLeadStore().leads;
+}
+
+function recordLeadChange(
+  action: LeadChangeAction,
+  ids: readonly string[],
+): void {
+  const store = getLeadStore();
+
+  store.changeLog.unshift({
+    at: new Date().toISOString(),
+    action,
+    ids: [...ids],
+  });
+  store.changeLog = store.changeLog.slice(0, 50);
+  persistLeads(store.leads);
+}
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
@@ -303,7 +498,7 @@ function emailBelongsToAnotherLead(
 ): boolean {
   const normalizedEmail = normalizeEmail(email);
 
-  return mockLeads.some(
+  return getMutableLeads().some(
     (lead) =>
       lead.id !== excludedLeadId &&
       normalizeEmail(lead.email) === normalizedEmail,
@@ -324,7 +519,7 @@ export async function getLeads({
 
   const normalizedQuery = q?.trim().toLowerCase();
 
-  return mockLeads
+  return getMutableLeads()
     .filter((lead) => {
       const matchesQuery =
         normalizedQuery === undefined ||
@@ -339,7 +534,7 @@ export async function getLeads({
 }
 
 export async function getLead(id: string): Promise<Lead | null> {
-  const lead = mockLeads.find((candidate) => candidate.id === id);
+  const lead = getMutableLeads().find((candidate) => candidate.id === id);
 
   return lead === undefined ? null : cloneLead(lead);
 }
@@ -382,7 +577,8 @@ export async function createLead(input: CreateLeadInput): Promise<Lead> {
     updatedAt: timestamp,
   };
 
-  mockLeads.push(lead);
+  getMutableLeads().push(lead);
+  recordLeadChange("create", [lead.id]);
 
   return cloneLead(lead);
 }
@@ -391,8 +587,8 @@ export async function updateLead(
   id: string,
   patch: Partial<Lead>,
 ): Promise<Lead> {
-  const leadIndex = mockLeads.findIndex((lead) => lead.id === id);
-  const currentLead = mockLeads[leadIndex];
+  const leadIndex = getMutableLeads().findIndex((lead) => lead.id === id);
+  const currentLead = getMutableLeads()[leadIndex];
 
   if (leadIndex < 0 || currentLead === undefined) {
     throw new LeadNotFoundError(id);
@@ -420,7 +616,8 @@ export async function updateLead(
     updatedAt: new Date(),
   };
 
-  mockLeads[leadIndex] = updatedLead;
+  getMutableLeads()[leadIndex] = updatedLead;
+  recordLeadChange("update", [id]);
 
   return cloneLead(updatedLead);
 }
@@ -432,7 +629,7 @@ export async function markLeadsStale(
   const targetIndexes: number[] = [];
 
   for (const id of uniqueIds) {
-    const targetIndex = mockLeads.findIndex((lead) => lead.id === id);
+    const targetIndex = getMutableLeads().findIndex((lead) => lead.id === id);
 
     if (targetIndex < 0) {
       throw new LeadNotFoundError(id);
@@ -451,7 +648,7 @@ export async function markLeadsStale(
   const pendingUpdates: { readonly index: number; readonly lead: Lead }[] = [];
 
   for (const targetIndex of targetIndexes) {
-    const currentLead = mockLeads[targetIndex];
+    const currentLead = getMutableLeads()[targetIndex];
 
     if (currentLead === undefined) {
       throw new Error("Stale batch target changed before it could be updated");
@@ -467,8 +664,10 @@ export async function markLeadsStale(
   }
 
   for (const update of pendingUpdates) {
-    mockLeads[update.index] = update.lead;
+    getMutableLeads()[update.index] = update.lead;
   }
+
+  recordLeadChange("mark-stale", uniqueIds);
 
   return pendingUpdates.map((update) => cloneLead(update.lead));
 }

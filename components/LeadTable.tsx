@@ -223,14 +223,11 @@ function buildEditHref(
 }
 
 function getUpdateErrorMessage(error: unknown): string {
-  if (
-    error instanceof Error &&
-    error.message === "Database connection timeout"
-  ) {
-    return "The data service timed out. The confirmed stage has been restored.";
+  if (error instanceof Error && error.message.length > 0) {
+    return "Update failed. The list shows the original saved stage.";
   }
 
-  return "The stage could not be updated. The confirmed stage has been restored.";
+  return "Update failed. The list shows the original saved stage.";
 }
 
 export default function LeadTable({
@@ -430,6 +427,7 @@ export default function LeadTable({
                           role="alert"
                           className="max-w-64 text-xs font-medium leading-5 text-rose-700"
                         >
+                          <span aria-hidden="true">× </span>
                           {rowState.error}
                         </p>
                       )}

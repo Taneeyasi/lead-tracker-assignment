@@ -33,3 +33,6 @@ Thumbs.db
 
 # Private interview material — never commit
 /INTERVIEW_PREP_NOTES.md
+
+# Local mock-store persistence (version 2)
+/.data
